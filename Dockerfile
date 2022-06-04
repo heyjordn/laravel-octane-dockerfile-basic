@@ -1,17 +1,13 @@
 # Accepted values: 8.1 - 8.0
+# Octane only runs on PHP 8 and above
 ARG PHP_VERSION=8.1
 
 ARG COMPOSER_VERSION=latest
-
-###########################################
-# PHP dependencies
-###########################################
 
 FROM composer:${COMPOSER_VERSION} AS vendor
 WORKDIR /var/www/html
 COPY composer* ./
 RUN composer install \
-  --no-dev \
   --no-interaction \
   --prefer-dist \
   --ignore-platform-reqs \
@@ -31,7 +27,7 @@ ARG TZ=UTC
 
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    TERM=xterm-color \
+    TERM=xterm-color
 
 ENV ROOT=/var/www/html
 WORKDIR $ROOT
@@ -72,113 +68,68 @@ RUN apt-get update; \
           libpcre3 \
           libxml2 \
           libzstd1 \
-          procps
+          procps; \
 
-###########################################
-# pdo_mysql
-###########################################
+docker-php-ext-install pdo_mysql; \
 
-RUN docker-php-ext-install pdo_mysql;
+# Install zip
+docker-php-ext-configure zip && docker-php-ext-install zip; \
 
-###########################################
-# zip
-###########################################
+# Install mbstring
+docker-php-ext-install mbstring; \
 
-RUN docker-php-ext-configure zip && docker-php-ext-install zip;
-
-###########################################
-# mbstring
-###########################################
-
-RUN docker-php-ext-install mbstring;
-
-###########################################
-# GD
-###########################################
-
-RUN docker-php-ext-configure gd \
+# Installs GD extension
+docker-php-ext-configure gd \
             --prefix=/usr \
             --with-jpeg \
             --with-webp \
             --with-freetype \
-    && docker-php-ext-install gd;
+    && docker-php-ext-install gd; \
 
-###########################################
-# OPcache
-###########################################
 
 # Include OPcache for extra performance 
-docker-php-ext-install opcache;
+docker-php-ext-install opcache; \
 
-###########################################
-# PHP Redis
-###########################################
-
+# Install redis
 pecl -q install -o -f redis \
-&& rm -rf /tmp/pear \
-&& docker-php-ext-enable redis; \
-
-###########################################
-# PCNTL
-###########################################
+    && rm -rf /tmp/pear \
+    && docker-php-ext-enable redis; \
 
 docker-php-ext-install pcntl; \
 
-###########################################
-# BCMath
-###########################################
-
+# Installs BCMath
 docker-php-ext-install bcmath; \
 
-###########################################
-# OpenSwoole/Swoole extension
-###########################################
-
+#Installs OpenSwoole
 apt-get install -yqq --no-install-recommends --show-progress libc-ares-dev \
 && pecl -q install -o -f -D 'enable-openssl="yes" enable-http2="yes" enable-swoole-curl="yes" enable-mysqlnd="yes" enable-cares="yes"' openswoole \
 && docker-php-ext-enable openswoole; \
 
-
-###########################################################################
-# Human Language and Character Encoding Support
-###########################################################################
-
+# Install Intl
 apt-get install -yqq --no-install-recommends --show-progress zlib1g-dev libicu-dev g++ \
 && docker-php-ext-configure intl \
 && docker-php-ext-install intl; \
 
+# Installs Memcached
+pecl -q install -o -f memcached && docker-php-ext-enable memcached; \
 
-###########################################
-# Memcached
-###########################################
+# Install MySQL Client
+apt-get install -yqq --no-install-recommends --show-progress default-mysql-client; \
 
-pecl -q install -o -f memcached && docker-php-ext-enable memcached;
+# Install Pgsql extension
+docker-php-ext-install pdo_pgsql; \
 
-###########################################
-# MySQL Client
-###########################################
+# Install Pgsql extension
+docker-php-ext-install pgsql; \
 
-apt-get install -yqq --no-install-recommends --show-progress default-mysql-client;
-
-###########################################
-# pdo_pgsql
-###########################################
-
-docker-php-ext-install pdo_pgsql;
-
-###########################################
-# pgsql
-###########################################
-
-docker-php-ext-install pgsql;
+# Clean up all source after
+apt-get clean \
+&& docker-php-source delete \
+&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+&& rm /var/log/lastlog /var/log/faillog
 
 RUN groupadd --force -g $WWWGROUP octane \
     && useradd -ms /bin/bash --no-log-init --no-user-group -g $WWWGROUP -u $WWWUSER octane
-
-RUN apt-get clean \
-    && docker-php-source delete \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
-    && rm /var/log/lastlog /var/log/faillog
 
 COPY . .
 COPY --from=vendor ${ROOT}/vendor vendor
@@ -192,7 +143,7 @@ RUN mkdir -p \
   bootstrap/cache \
   && chmod -R ug+rwx storage bootstrap/cache
 
-COPY deployment/octane/supervisord /etc/supervisor/conf.d/
+COPY deployment/octane/supervisord.app.conf /etc/supervisor/conf.d/
 COPY deployment/octane/php.ini /usr/local/etc/php/conf.d/octane.ini
 COPY deployment/octane/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
 
