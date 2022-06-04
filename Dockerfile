@@ -20,27 +20,18 @@ RUN composer install \
   --ansi \
   --no-scripts
 
-###########################################
 
 FROM php:${PHP_VERSION}-cli-buster
 
-LABEL maintainer="Seyed Morteza Ebadi <seyed.me720@gmail.com>"
+LABEL maintainer="Jordan Jones <proxima.aust@gmail.com>"
 
 ARG WWWUSER=1000
 ARG WWWGROUP=1000
 ARG TZ=UTC
 
-# Accepted values: app - horizon - scheduler
-ARG CONTAINER_MODE=app
-
-ARG APP_WITH_HORIZON=false
-ARG APP_WITH_SCHEDULER=false
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TERM=xterm-color \
-    CONTAINER_MODE=${CONTAINER_MODE} \
-    APP_WITH_HORIZON=${APP_WITH_HORIZON} \
-    APP_WITH_SCHEDULER=${APP_WITH_SCHEDULER}
 
 ENV ROOT=/var/www/html
 WORKDIR $ROOT
@@ -116,151 +107,70 @@ RUN docker-php-ext-configure gd \
 # OPcache
 ###########################################
 
-ARG INSTALL_OPCACHE=true
-
-RUN if [ ${INSTALL_OPCACHE} = true ]; then \
-      docker-php-ext-install opcache; \
-  fi
+# Include OPcache for extra performance 
+docker-php-ext-install opcache;
 
 ###########################################
 # PHP Redis
 ###########################################
 
-ARG INSTALL_PHPREDIS=true
-
-RUN if [ ${INSTALL_PHPREDIS} = true ]; then \
-      pecl -q install -o -f redis \
-      && rm -rf /tmp/pear \
-      && docker-php-ext-enable redis; \
-  fi
+pecl -q install -o -f redis \
+&& rm -rf /tmp/pear \
+&& docker-php-ext-enable redis; \
 
 ###########################################
 # PCNTL
 ###########################################
 
-ARG INSTALL_PCNTL=true
-
-RUN if [ ${INSTALL_PCNTL} = true ]; then \
-      docker-php-ext-install pcntl; \
-  fi
+docker-php-ext-install pcntl; \
 
 ###########################################
 # BCMath
 ###########################################
 
-ARG INSTALL_BCMATH=true
-
-RUN if [ ${INSTALL_BCMATH} = true ]; then \
-      docker-php-ext-install bcmath; \
-  fi
-
-###########################################
-# RDKAFKA
-###########################################
-
-ARG INSTALL_RDKAFKA=true
-
-RUN if [ ${INSTALL_RDKAFKA} = true ]; then \
-      apt-get install -yqq --no-install-recommends --show-progress librdkafka-dev \
-      && pecl -q install -o -f rdkafka \
-      && docker-php-ext-enable rdkafka; \
-  fi
+docker-php-ext-install bcmath; \
 
 ###########################################
 # OpenSwoole/Swoole extension
 ###########################################
 
-ARG INSTALL_SWOOLE=true
-ARG SERVER=openswoole
+apt-get install -yqq --no-install-recommends --show-progress libc-ares-dev \
+&& pecl -q install -o -f -D 'enable-openssl="yes" enable-http2="yes" enable-swoole-curl="yes" enable-mysqlnd="yes" enable-cares="yes"' openswoole \
+&& docker-php-ext-enable openswoole; \
 
-RUN if [ ${INSTALL_SWOOLE} = true ]; then \
-      apt-get install -yqq --no-install-recommends --show-progress libc-ares-dev \
-      && pecl -q install -o -f -D 'enable-openssl="yes" enable-http2="yes" enable-swoole-curl="yes" enable-mysqlnd="yes" enable-cares="yes"' ${SERVER} \
-      && docker-php-ext-enable ${SERVER}; \
-    fi
 
 ###########################################################################
 # Human Language and Character Encoding Support
 ###########################################################################
 
-ARG INSTALL_INTL=true
+apt-get install -yqq --no-install-recommends --show-progress zlib1g-dev libicu-dev g++ \
+&& docker-php-ext-configure intl \
+&& docker-php-ext-install intl; \
 
-RUN if [ ${INSTALL_INTL} = true ]; then \
-      apt-get install -yqq --no-install-recommends --show-progress zlib1g-dev libicu-dev g++ \
-      && docker-php-ext-configure intl \
-      && docker-php-ext-install intl; \
-  fi
 
 ###########################################
 # Memcached
 ###########################################
 
-ARG INSTALL_MEMCACHED=false
-
-RUN if [ ${INSTALL_MEMCACHED} = true ]; then \
-      pecl -q install -o -f memcached && docker-php-ext-enable memcached; \
-  fi
+pecl -q install -o -f memcached && docker-php-ext-enable memcached;
 
 ###########################################
 # MySQL Client
 ###########################################
 
-ARG INSTALL_MYSQL_CLIENT=true
-
-RUN if [ ${INSTALL_MYSQL_CLIENT} = true ]; then \
-      apt-get install -yqq --no-install-recommends --show-progress default-mysql-client; \
-  fi
+apt-get install -yqq --no-install-recommends --show-progress default-mysql-client;
 
 ###########################################
 # pdo_pgsql
 ###########################################
 
-ARG INSTALL_PDO_PGSQL=false
-
-RUN if [ ${INSTALL_PDO_PGSQL} = true ]; then \
-      docker-php-ext-install pdo_pgsql; \
-  fi
+docker-php-ext-install pdo_pgsql;
 
 ###########################################
 # pgsql
 ###########################################
 
-ARG INSTALL_PGSQL=false
-
-RUN if [ ${INSTALL_PGSQL} = true ]; then \
-      docker-php-ext-install pgsql; \
-  fi
-
-###########################################
-# pgsql client and postgis
-###########################################
-
-ARG INSTALL_PG_CLIENT=false
-ARG INSTALL_POSTGIS=false
-
-RUN if [ ${INSTALL_PG_CLIENT} = true ]; then \
-      . /etc/os-release \
-      && echo "deb http://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
-      && curl -sL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
-      && apt-get install -yqq --no-install-recommends --show-progress postgresql-client-12 postgis; \
-      if [ ${INSTALL_POSTGIS} = true ]; then \
-        apt-get install -yqq --no-install-recommends --show-progress postgis; \
-      fi; \
-  fi
-
-###########################################
-# Laravel scheduler
-###########################################
-
-RUN if [ ${CONTAINER_MODE} = 'scheduler' ] || [ ${APP_WITH_SCHEDULER} = true ]; then \
-      wget -q "https://github.com/aptible/supercronic/releases/download/v0.1.12/supercronic-linux-amd64" \
-           -O /usr/bin/supercronic \
-      && chmod +x /usr/bin/supercronic \
-      && mkdir -p /etc/supercronic \
-      && echo "*/1 * * * * su octane -c \"php ${ROOT}/artisan schedule:run --verbose --no-interaction\"" > /etc/supercronic/laravel; \
-  fi
-
-###########################################
+docker-php-ext-install pgsql;
 
 RUN groupadd --force -g $WWWGROUP octane \
     && useradd -ms /bin/bash --no-log-init --no-user-group -g $WWWGROUP -u $WWWUSER octane
@@ -282,12 +192,11 @@ RUN mkdir -p \
   bootstrap/cache \
   && chmod -R ug+rwx storage bootstrap/cache
 
-COPY deployment/octane/supervisord* /etc/supervisor/conf.d/
+COPY deployment/octane/supervisord /etc/supervisor/conf.d/
 COPY deployment/octane/php.ini /usr/local/etc/php/conf.d/octane.ini
 COPY deployment/octane/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
 
 RUN chmod +x deployment/octane/entrypoint.sh
-RUN cat deployment/octane/utilities.sh >> ~/.bashrc
 
 EXPOSE 9000
 
